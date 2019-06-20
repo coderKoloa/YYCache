@@ -8,6 +8,10 @@
 //  This source code is licensed under the MIT-style license found in the
 //  LICENSE file in the root directory of this source tree.
 //
+/**
+ @updated documentation updated on 2019-06-20
+ @version 1.0.0
+ */
 
 #import "YYMemoryCache.h"
 #import <UIKit/UIKit.h>
@@ -80,6 +84,7 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
 
 - (instancetype)init {
     self = [super init];
+    // CFDictionary . 作为 当前缓存 map 的唯一存储容器.
     _dic = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     _releaseOnMainThread = NO;
     _releaseAsynchronously = YES;
@@ -90,6 +95,10 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     CFRelease(_dic);
 }
 
+/**
+ 添加node 到 head . 由于LRU MRU 算法的设计. 新的obj 被add 到缓存中时, 直接将node 添加到 head .
+ @param node 包装了缓存数据的 数据节点.
+ */
 - (void)insertNodeAtHead:(_YYLinkedMapNode *)node {
     CFDictionarySetValue(_dic, (__bridge const void *)(node->_key), (__bridge const void *)(node));
     _totalCost += node->_cost;
@@ -103,6 +112,10 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     }
 }
 
+/**
+ 移动Node
+ @param node 在 map 中存在的 Node. 使用过后 移到最前.
+ */
 - (void)bringNodeToHead:(_YYLinkedMapNode *)node {
     if (_head == node) return;
     
@@ -110,15 +123,27 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
         _tail = node->_prev;
         _tail->_next = nil;
     } else {
+        // node 前后节点关联
         node->_next->_prev = node->_prev;
         node->_prev->_next = node->_next;
     }
+    // node 的next 指向目前的 head
     node->_next = _head;
+    // node 的prev 指向nil
     node->_prev = nil;
+    // head 的prev 指向 node.
     _head->_prev = node;
+    // 至此, 上一步结束之后, _head 已经不是 head 了. node 成为世纪的head . node 前后的关系已经处理结束
+    // 将 _head 赋值为 node. 更新结束.
     _head = node;
 }
 
+
+/**
+ 移除缓存
+
+ @param node 被删除的节点
+ */
 - (void)removeNode:(_YYLinkedMapNode *)node {
     CFDictionaryRemoveValue(_dic, (__bridge const void *)(node->_key));
     _totalCost -= node->_cost;
@@ -152,7 +177,8 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     if (CFDictionaryGetCount(_dic) > 0) {
         CFMutableDictionaryRef holder = _dic;
         _dic = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-        
+#warning dont understand
+        /// 这一段 看不懂线程 是要干什么 ?
         if (_releaseAsynchronously) {
             dispatch_queue_t queue = _releaseOnMainThread ? dispatch_get_main_queue() : YYMemoryCacheGetReleaseQueue();
             dispatch_async(queue, ^{
@@ -178,7 +204,13 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     dispatch_queue_t _queue;
 }
 
+
+/**
+ 这个方法 会从init 开始一直递归调用. 每隔 5S 会移除连表中 超出设置参数的 节点.
+ */
+#warning 这个递归调用? 不会有什么 堆栈的问题么 ?
 - (void)_trimRecursively {
+#warning 注意 weak strong block 理解.
     __weak typeof(self) _self = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_autoTrimInterval * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
         __strong typeof(_self) self = _self;
@@ -209,6 +241,8 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     if (finish) return;
     
     NSMutableArray *holder = [NSMutableArray new];
+    // 利用 标志位, 一直循环 删除tailNode .
+#warning 不懂 --> 这里 usleep ? 干嘛用的 ? 每次循环都要 tryLock ???
     while (!finish) {
         if (pthread_mutex_trylock(&_lock) == 0) {
             if (_lru->_totalCost > costLimit) {
@@ -299,6 +333,9 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     }
 }
 
+/**
+ 收到系统的内存警告时, 相应处理.  block 作为接口, 供用户自由控制. 如果有前置设置项, 删除mapTable .
+ */
 - (void)_appDidReceiveMemoryWarningNotification {
     if (self.didReceiveMemoryWarningBlock) {
         self.didReceiveMemoryWarningBlock(self);
@@ -307,7 +344,9 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
         [self removeAllObjects];
     }
 }
-
+/**
+ 系统进入后台时, 相应处理.  block 作为接口, 供用户自由控制. 如果有前置设置项, 删除mapTable .
+ */
 - (void)_appDidEnterBackgroundNotification {
     if (self.didEnterBackgroundBlock) {
         self.didEnterBackgroundBlock(self);
@@ -321,10 +360,12 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
 
 - (instancetype)init {
     self = super.init;
+    // 初始化 锁 .
     pthread_mutex_init(&_lock, NULL);
     _lru = [_YYLinkedMap new];
     _queue = dispatch_queue_create("com.ibireme.cache.memory", DISPATCH_QUEUE_SERIAL);
     
+    /// 三个参数, 可从不同维度 控制 cache 的大小.
     _countLimit = NSUIntegerMax;
     _costLimit = NSUIntegerMax;
     _ageLimit = DBL_MAX;
@@ -335,6 +376,7 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_appDidReceiveMemoryWarningNotification) name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_appDidEnterBackgroundNotification) name:UIApplicationDidEnterBackgroundNotification object:nil];
     
+    // init 即 开始递归调用. 每隔一段时间 清除一百年 cache 中超出设置项的节点.
     [self _trimRecursively];
     return self;
 }
