@@ -9,6 +9,13 @@
 //  LICENSE file in the root directory of this source tree.
 //
 
+/**
+ DiskCache 使用 sqlite 和 disk 两种存储方式 (可配置).
+ 当前这个类, 只做最上层的处理. 也只提供最上层接口. 与 YYMemoryCache 接口相似.
+ 具体实现, 区分 都是通过 YYKVStorage 这个类来实现.
+ */
+
+
 #import "YYDiskCache.h"
 #import "YYKVStorage.h"
 #import <UIKit/UIKit.h>
@@ -50,6 +57,10 @@ static NSString *_YYNSStringMD5(NSString *string) {
 static NSMapTable *_globalInstances;
 static dispatch_semaphore_t _globalInstancesLock;
 
+
+/**
+ @brief Deven: mapTable 作为存储的容器.  单例
+ */
 static void _YYDiskCacheInitGlobal() {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
